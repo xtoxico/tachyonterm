@@ -10,7 +10,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Terminal,
 };
@@ -76,7 +76,7 @@ impl Config {
 }
 
 struct App {
-    buffer: Arc<Mutex<Vec<String>>>,
+    buffer: Arc<Mutex<vt100::Parser>>,
     chat_history: Arc<Mutex<Vec<ChatMessage>>>,
     active_focus: Focus,
     chat_input: TextArea<'static>,
@@ -146,11 +146,8 @@ impl App {
         tokio::spawn(async move {
             // --- FASE 1: Recolectar Contexto ---
             let context_text = {
-                let locked_buffer = buffer_clone.lock().unwrap();
-                let len = locked_buffer.len();
-                // Cogemos las últimas 50 líneas para no saturar
-                let start = len.saturating_sub(50); 
-                locked_buffer[start..].join("\n")
+                let locked_parser = buffer_clone.lock().unwrap();
+                locked_parser.screen().contents()
             };
 
             // --- FASE 2: Construir el Prompt Maestro ---
@@ -273,8 +270,8 @@ async fn main() -> Result<()> {
         Err(_) => (AppState::Setup, None),
     };
 
-    let mut app = App {
-        buffer: Arc::new(Mutex::new(vec![String::new()])),
+    let app = App {
+        buffer: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 0))),
         chat_history: Arc::new(Mutex::new(Vec::new())),
         active_focus: Focus::Terminal,
         chat_input,
@@ -301,25 +298,8 @@ async fn main() -> Result<()> {
         loop {
             match reader.read(&mut buf) {
                 Ok(n) if n > 0 => {
-                    let s = String::from_utf8_lossy(&buf[..n]);
-                    let mut locked = buffer.lock().unwrap();
-                    
-                    let parts: Vec<&str> = s.split('\n').collect();
-                    
-                    if let Some(last) = locked.last_mut() {
-                        last.push_str(parts[0]);
-                    } else {
-                        locked.push(parts[0].to_string());
-                    }
-
-                    for part in parts.iter().skip(1) {
-                        locked.push(part.to_string());
-                    }
-
-                    if locked.len() > 1000 {
-                        let len = locked.len();
-                        locked.drain(0..len - 500);
-                    }
+                    let mut locked_parser = buffer.lock().unwrap();
+                    locked_parser.process(&buf[..n]);
                 }
                 Ok(_) => break, // EOF
                 Err(_) => break, // Error
@@ -328,6 +308,9 @@ async fn main() -> Result<()> {
     });
 
     // Run app loop
+    // We need to pass a mutable reference to app, but app is not mutable.
+    // Let's make it mutable.
+    let mut app = app;
     let res = run_app(&mut terminal, &mut app).await;
 
     // Restore terminal
@@ -345,12 +328,37 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn map_color(c: vt100::Color) -> Color {
+    match c {
+        vt100::Color::Default => Color::Reset,
+        vt100::Color::Idx(i) => Color::Indexed(i),
+        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
+    }
+}
+
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
     loop {
         terminal.draw(|f| {
+            // Global Layout: Main Content + Status Bar
+            let global_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(1),    // Main Content
+                    Constraint::Length(1), // Status Bar
+                ])
+                .split(f.area());
+
+            // Render Status Bar
+            let status_text = " [Ctrl+Space] Switch Focus | [Ctrl+Q] Quit | [Ctrl+E] Exec Suggestion | [Ctrl+R] Reset Config ";
+            let status_bar = Paragraph::new(status_text)
+                .style(Style::default().bg(Color::Blue).fg(Color::White));
+            f.render_widget(status_bar, global_chunks[1]);
+
+            let main_area = global_chunks[0];
+
             if app.state == AppState::Setup {
                 // Render Setup UI
-                let area = centered_rect(60, 20, f.area());
+                let area = centered_rect(60, 20, main_area);
                 let popup_block = Block::default()
                     .title(" Configuración Inicial ")
                     .borders(Borders::ALL)
@@ -385,7 +393,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                         Constraint::Percentage(50),
                         Constraint::Percentage(50),
                     ])
-                    .split(f.area());
+                    .split(main_area);
 
                 let left_chunks = Layout::default()
                     .direction(Direction::Vertical)
@@ -436,12 +444,45 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                         Style::default()
                     });
                 
-                let buffer = app.buffer.lock().unwrap();
-                let height = main_chunks[1].height.saturating_sub(2) as usize;
-                let start = buffer.len().saturating_sub(height);
-                let display_text: String = buffer[start..].join("\n");
+                let parser = app.buffer.lock().unwrap();
+                let screen = parser.screen();
+                let (rows, cols) = screen.size();
+                let (cursor_row, _cursor_col) = screen.cursor_position();
                 
-                f.render_widget(Paragraph::new(display_text).block(terminal_block), main_chunks[1]);
+                let mut lines = Vec::new();
+                for row_idx in 0..rows {
+                    let mut spans = Vec::new();
+                    for col_idx in 0..cols {
+                        if let Some(cell) = screen.cell(row_idx, col_idx) {
+                            let fg = map_color(cell.fgcolor());
+                            let bg = map_color(cell.bgcolor());
+                            let mut style = Style::default().fg(fg).bg(bg);
+                            if cell.bold() { style = style.add_modifier(ratatui::style::Modifier::BOLD); }
+                            if cell.italic() { style = style.add_modifier(ratatui::style::Modifier::ITALIC); }
+                            if cell.underline() { style = style.add_modifier(ratatui::style::Modifier::UNDERLINED); }
+                            
+                            spans.push(Span::styled(cell.contents(), style));
+                        } else {
+                            spans.push(Span::raw(" "));
+                        }
+                    }
+                    lines.push(Line::from(spans));
+                }
+
+                // Auto-scroll logic
+                let widget_height = main_chunks[1].height.saturating_sub(2); // borders
+                let scroll_offset = if cursor_row >= widget_height {
+                    cursor_row.saturating_sub(widget_height).saturating_add(1)
+                } else {
+                    0
+                };
+
+                f.render_widget(
+                    Paragraph::new(lines)
+                        .block(terminal_block)
+                        .scroll((scroll_offset, 0)), 
+                    main_chunks[1]
+                );
             }
         })?;
 
@@ -452,6 +493,84 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
             if let Event::Key(key) = event {
                 if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     return Ok(());
+                }
+                
+                // Ctrl+L to Clear
+                if key.code == KeyCode::Char('l') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    if app.active_focus == Focus::Terminal {
+                         let master_guard = app.pty_master.lock().unwrap();
+                         #[cfg(unix)]
+                         {
+                            use std::os::unix::io::FromRawFd;
+                            use std::fs::File;
+                            use std::mem;
+                            let fd = master_guard.as_raw_fd().expect("Failed to get PTY FD");
+                            let mut file = unsafe { File::from_raw_fd(fd) };
+                            let _ = file.write_all(b"clear\n");
+                            mem::forget(file);
+                         }
+                    }
+                    continue;
+                }
+
+                // Ctrl+R to Reset Config
+                if key.code == KeyCode::Char('r') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    if let Some(proj_dirs) = ProjectDirs::from("com", "tachyonterm", "tachyonterm") {
+                        let config_path = proj_dirs.config_dir().join("config.toml");
+                        if config_path.exists() {
+                            let _ = fs::remove_file(config_path);
+                        }
+                    }
+                    app.config = None;
+                    app.state = AppState::Setup;
+                    app.setup_input = TextArea::default();
+                    app.setup_input.set_block(Block::default().borders(Borders::ALL).title("API Key"));
+                    app.setup_input.set_placeholder_text("Pegue su Google Gemini API Key aquí...");
+                    continue;
+                }
+
+                // Ctrl+E to Execute Suggestion
+                if key.code == KeyCode::Char('e') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    let history = app.chat_history.lock().unwrap();
+                    if let Some(last_model_msg) = history.iter().rev().find(|m| m.role == "model") {
+                        // Simple extraction: find first code block
+                        let content = &last_model_msg.content;
+                        if let Some(start) = content.find("```") {
+                            let rest = &content[start + 3..];
+                            // Skip language identifier if present (e.g., "bash\n")
+                            let code_start = if let Some(newline) = rest.find('\n') {
+                                newline + 1
+                            } else {
+                                0
+                            };
+                            
+                            if let Some(end) = rest[code_start..].find("```") {
+                                let code = &rest[code_start..code_start + end];
+                                let clean_code = code.trim();
+                                
+                                if !clean_code.is_empty() {
+                                     let master_guard = app.pty_master.lock().unwrap();
+                                     #[cfg(unix)]
+                                     {
+                                        use std::os::unix::io::FromRawFd;
+                                        use std::fs::File;
+                                        use std::mem;
+                                        let fd = master_guard.as_raw_fd().expect("Failed to get PTY FD");
+                                        let mut file = unsafe { File::from_raw_fd(fd) };
+                                        let _ = file.write_all(clean_code.as_bytes());
+                                        // Optional: press enter automatically? Usually safer to let user press enter, 
+                                        // but "Execute Suggestion" implies execution. Let's add a newline.
+                                        // let _ = file.write_all(b"\n"); 
+                                        // User might want to edit, so maybe NO newline is safer. 
+                                        // But standard "execute" usually runs it. 
+                                        // Let's stick to pasting it so user can review.
+                                        mem::forget(file);
+                                     }
+                                }
+                            }
+                        }
+                    }
+                    continue;
                 }
             }
 
@@ -464,8 +583,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                             if !api_key.is_empty() {
                                 let config = Config { api_key: api_key.clone() };
                                 if let Err(_e) = config.save() {
-                                    // En una app real mostraríamos error, aquí lo logueamos o ignoramos por simplicidad
-                                    // O podríamos cambiar el texto del popup
+                                    // Log error
                                 } else {
                                     app.config = Some(config);
                                     app.state = AppState::Running;
@@ -478,7 +596,8 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                 }
                 AppState::Running => {
                     if let Event::Key(key) = event {
-                        if key.code == KeyCode::Tab {
+                        // Ctrl+Space to switch focus
+                        if key.code == KeyCode::Char(' ') && key.modifiers.contains(KeyModifiers::CONTROL) {
                             app.active_focus = match app.active_focus {
                                 Focus::Chat => Focus::Terminal,
                                 Focus::Terminal => Focus::Chat,
@@ -506,15 +625,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                         Focus::Terminal => {
                             if let Event::Key(key) = event {
                                 let master_guard = app.pty_master.lock().unwrap();
-                                // Hack: MasterPty might not implement Write directly in this version?
-                                // Try to use AsRawFd if available (Unix only)
                                 #[cfg(unix)]
                                 {
                                     use std::os::unix::io::FromRawFd;
                                     use std::fs::File;
                                     use std::mem;
                                     
-                                    // master_guard.as_raw_fd() returns Option<i32> in portable-pty
                                     let fd = master_guard.as_raw_fd().expect("Failed to get PTY FD");
                                     let mut file = unsafe { File::from_raw_fd(fd) };
                                     
@@ -540,10 +656,11 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                                         KeyCode::Down => {
                                             let _ = file.write_all(b"\x1b[B");
                                         }
+                                        KeyCode::Tab => {
+                                            let _ = file.write_all(b"\t");
+                                        }
                                         _ => {}
                                     }
-                                    
-                                    // Prevent closing the FD
                                     mem::forget(file);
                                 }
                             }
