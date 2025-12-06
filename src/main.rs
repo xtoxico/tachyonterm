@@ -499,13 +499,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
             let main_area = global_chunks[0];
 
             if app.state == AppState::Setup {
-                // Render Setup UI
-                let area = centered_rect(60, 40, main_area); // Increased height for better spacing
+                // Render Setup UI (Onboarding)
+                let area = centered_rect(60, 50, main_area); // 60% width, 50% height
                 
                 f.render_widget(Clear, area); // Clear background
 
                 let popup_block = Block::default()
-                    .title(" Configuración de TachyonTerm ")
+                    .title(" Bienvenido a TachyonTerm ")
                     .borders(Borders::ALL)
                     .style(Style::default().bg(Color::Rgb(20, 20, 20)).fg(Color::White));
                 
@@ -515,27 +515,35 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                     .direction(Direction::Vertical)
                     .margin(2)
                     .constraints([
-                        Constraint::Length(6), // Instrucciones
+                        Constraint::Min(1),    // Onboarding Text
                         Constraint::Length(3), // Input
-                        Constraint::Min(1),    // Footer/Espacio
+                        Constraint::Length(1), // Footer Help
                     ])
                     .split(area);
 
-                let instructions = vec![
-                    Line::from(vec![
-                        Span::raw("¡Bienvenido! Para usar la IA, necesitas una API Key gratuita de Google Gemini."),
-                    ]),
+                let onboarding_text = vec![
+                    Line::from("¡Hola! TachyonTerm es una terminal potenciada por IA diseñada para acelerar tu flujo de trabajo en Linux."),
                     Line::from(""),
-                    Line::from(vec![
-                        Span::raw("1. Ve a: "),
-                        Span::styled("https://aistudio.google.com/app/apikey", Style::default().fg(Color::Cyan)),
-                    ]),
-                    Line::from("2. Inicia sesión y pulsa en 'Create API Key'."),
-                    Line::from("3. Copia la clave y pégala abajo (Ctrl+Shift+V)."),
+                    Line::from(Span::styled("REQUISITOS:", Style::default().fg(Color::Magenta).add_modifier(ratatui::style::Modifier::BOLD))),
+                    Line::from("Para funcionar, este programa utiliza la API de Google Gemini."),
+                    Line::from("No te preocupes: La versión GRATUITA (Free Tier) es suficiente y muy generosa."),
+                    Line::from(""),
+                    Line::from(Span::styled("INSTRUCCIONES DE INSTALACIÓN:", Style::default().fg(Color::Magenta).add_modifier(ratatui::style::Modifier::BOLD))),
+                    Line::from("1. Ve a: "),
+                    Line::from(Span::styled("https://aistudio.google.com/app/apikey", Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::UNDERLINED))),
+                    Line::from("2. Inicia sesión con tu cuenta de Google y pulsa 'Create API Key'."),
+                    Line::from("3. Copia la clave generada 'AIza...' y pégala en el campo de abajo."),
+                    Line::from(""),
+                    Line::from(Span::styled("CÓMO USAR TACHYONTERM:", Style::default().fg(Color::Magenta).add_modifier(ratatui::style::Modifier::BOLD))),
+                    Line::from("• [Ctrl+Space] Cambiar foco entre Chat y Terminal."),
+                    Line::from("• [Ctrl+E] Ejecutar automáticamente el código sugerido por la IA."),
+                    Line::from("• [Ctrl+Q] Salir."),
+                    Line::from(""),
+                    Line::from("Disfruta de tu nuevo superpoder."),
                 ];
                 
-                f.render_widget(Paragraph::new(instructions).style(Style::default().fg(Color::White)), chunks[0]);
-                
+                f.render_widget(Paragraph::new(onboarding_text).wrap(ratatui::widgets::Wrap { trim: true }), chunks[0]);
+
                 // Style Input
                 app.setup_input.set_block(
                     Block::default()
@@ -546,7 +554,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                 f.render_widget(&app.setup_input, chunks[1]);
 
                 // Footer
-                let footer = Paragraph::new("Pulsa [Enter] para guardar y continuar")
+                let footer = Paragraph::new("Pulsa [Enter] para guardar e iniciar")
                     .style(Style::default().fg(Color::Gray).add_modifier(ratatui::style::Modifier::ITALIC))
                     .alignment(ratatui::layout::Alignment::Center);
                 f.render_widget(footer, chunks[2]);

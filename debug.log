@@ -118,3 +118,35 @@ Key: AIzaSyBN1u4-cIVfUIPYbCF34VhDzJn88FNRepw
 Prompt Length: 727
 Status Code: 200 OK
 Respuesta recibida y parseada OK
+--- ENVIANDO REQUEST ---
+Key: Vamos a mejorar la experiencia de primer uso. Quiero que la pantalla de configuración (`AppState::Setup`) actúe como un onboarding informativo (tipo EULA o Readme corto) antes de pedir la clave.
+Prompt Length: 1415
+Status Code: 400 Bad Request
+API ERROR BODY: {
+  "error": {
+    "code": 400,
+    "message": "API key not valid. Please pass a valid API key.",
+    "status": "INVALID_ARGUMENT",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "API_KEY_INVALID",
+        "domain": "googleapis.com",
+        "metadata": {
+          "service": "generativelanguage.googleapis.com"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "API key not valid. Please pass a valid API key."
+      }
+    ]
+  }
+}
+
+--- ENVIANDO REQUEST ---
+Key: AIzaSyBN1u4-cIVfUIPYbCF34VhDzJn88FNRepw
+Prompt Length: 1415
+Status Code: 200 OK
+Respuesta recibida y parseada OK
