@@ -1,68 +1,65 @@
 # TachyonTerm
 
-TachyonTerm is a Rust-based Terminal User Interface (TUI) application that combines a local terminal emulator with an AI assistant powered by the Gemini API.
+**TachyonTerm** is a next-generation Rust-based Terminal User Interface (TUI) that seamlessly integrates a local terminal emulator with an AI assistant powered by Google's Gemini API. It's designed to be your intelligent pair programmer directly in the command line.
 
-## Features
+## 🚀 Features
 
-*   **Split-Screen Interface**:
-    *   **Left Panel**: AI Assistant context and chat input.
-    *   **Right Panel**: Fully functional local terminal (running `/bin/bash`).
-*   **AI Integration**:
-    *   Chat with Google's Gemini 2.5 Flash model directly from the terminal.
-    *   Context-aware assistance (future planned feature).
-*   **Interactivity**:
-    *   Seamless focus switching between Chat and Terminal using `Tab`.
-    *   Real-time terminal output rendering.
-    *   Multi-line chat input support.
+### 🧠 AI-Powered Assistance
+- **Context-Aware**: The AI sees your terminal output and history, allowing it to provide relevant answers without copy-pasting.
+- **Gemini 2.5 Flash**: Powered by Google's latest fast and efficient model.
+- **Markdown Rendering**: Rich text support in chat, including syntax-highlighted code blocks and headers.
 
-## Prerequisites
+### ⚡ Actionable Suggestions
+- **Smart Extraction**: Automatically detects code blocks in AI responses and extracts them into a dedicated "Suggestions" panel.
+- **One-Click Execution**: Navigate to a suggestion and press `Enter` to instantly execute it in your terminal.
+- **Safety First**: Intelligent sanitization removes shell prompts (`$`, `#`) and output lines, ensuring only clean commands are executed.
 
-*   Rust (latest stable)
-*   `GEMINI_API_KEY` environment variable set with your Google Gemini API key.
+### 🖥️ Professional UI
+- **Split-Screen Layout**:
+    - **Left Panel**: Chat History (Top), Input Box (Middle), Actionable Suggestions (Bottom).
+    - **Right Panel**: Fully functional local terminal (running `/bin/bash`).
+- **Setup Wizard**: User-friendly first-run experience to configure your API Key.
+- **Auto-Scroll**: Chat automatically scrolls to the latest message.
 
-## Installation & Running
+## 🛠️ Installation
 
-1.  Clone the repository:
+1.  **Clone the repository**:
     ```bash
     git clone <repository-url>
     cd tachyonterm
     ```
 
-2.  Set your API key:
-    ```bash
-    export GEMINI_API_KEY="your_api_key_here"
-    ```
-
-3.  Run the application:
+2.  **Run the application**:
     ```bash
     cargo run
     ```
 
-## Configuration
+3.  **First Run Configuration**:
+    - On the first launch, you will be greeted by a Setup Wizard.
+    - Follow the on-screen instructions to get your free Google Gemini API Key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+    - Paste the key into the input box and press `Enter`.
 
-TachyonTerm supports persistent configuration via `config.toml`.
+## 🎮 Controls
 
-*   **First Run**: The application will prompt you to enter your Gemini API Key if no configuration is found.
-*   **Location**: The config file is stored in your system's standard configuration directory (e.g., `~/.config/tachyonterm/config.toml` on Linux).
-*   **Fallback**: If no config file exists, it falls back to the `GEMINI_API_KEY` environment variable.
+| Key Binding | Context | Action |
+| :--- | :--- | :--- |
+| **Ctrl + Space** | Global | Switch focus between **Chat** and **Terminal**. |
+| **Ctrl + Q** | Global | Quit the application. |
+| **Ctrl + R** | Global | Reset configuration (delete API Key and restart setup). |
+| **Enter** | Chat Input | Send message to AI. |
+| **Ctrl + Down** | Chat Input | Focus the **Suggestions Panel**. |
+| **Up / Down** | Suggestions | Select a command. |
+| **Enter** | Suggestions | **Execute** the selected command in the terminal. |
+| **PgUp / PgDn** | Chat | Scroll the chat history manually. |
+| **Home** | Chat | Scroll to the top of the chat. |
 
-## Troubleshooting
+## 🏗️ Architecture
 
-*   **Logs**: The application writes debug logs to `debug.log` in the current directory. Check this file if you encounter issues with the AI integration.
+- **Frontend**: Built with `ratatui` and `crossterm` for a robust TUI experience.
+- **Async Runtime**: `tokio` handles non-blocking I/O for smooth UI performance.
+- **Terminal Emulation**: `portable-pty` and `vt100` provide accurate terminal rendering and state management.
+- **AI Client**: `reqwest` manages secure communication with the Gemini API.
 
-## Controls
-
-*   **Tab**: Switch focus between Chat Input and Local Terminal.
-*   **Enter** (in Chat): Send message to AI.
-*   **Ctrl+q**: Quit the application.
-
-## Architecture
-
-*   **Frontend**: Built with `ratatui` and `crossterm`.
-*   **Async Runtime**: `tokio` for handling non-blocking I/O (PTY reading, API requests).
-*   **Terminal Emulation**: `portable-pty` for spawning and controlling the pseudo-terminal.
-*   **AI Client**: `reqwest` for communicating with the Gemini API.
-
-## License
+## 📄 License
 
 MIT
