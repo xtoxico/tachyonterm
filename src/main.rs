@@ -345,22 +345,19 @@ fn parse_markdown_to_lines(text: &str) -> Vec<Line<'static>> {
     for line in text.lines() {
         if line.trim().starts_with("```") {
             in_code_block = !in_code_block;
-            lines.push(Line::styled(
-                line.to_string(),
-                Style::default().bg(Color::Rgb(40, 40, 40)).fg(Color::Cyan),
-            ));
-            continue;
+            continue; // Ocultar delimitadores
         }
 
         if in_code_block {
             lines.push(Line::styled(
-                line.to_string(),
-                Style::default().bg(Color::Rgb(40, 40, 40)).fg(Color::Cyan),
+                format!("  {}", line), // Añadir margen
+                Style::default().bg(Color::Rgb(20, 20, 20)).fg(Color::Cyan),
             ));
         } else {
             if line.starts_with('#') {
+                let content = line.trim_start_matches('#').trim();
                 lines.push(Line::styled(
-                    line.to_string(),
+                    content.to_string(),
                     Style::default()
                         .add_modifier(ratatui::style::Modifier::BOLD)
                         .fg(Color::Magenta),
