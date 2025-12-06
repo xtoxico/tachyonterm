@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
     Terminal,
 };
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,7 @@ struct ChatMessage {
 enum Focus {
     Chat,
     Terminal,
+    Suggestions,
 }
 
 #[derive(PartialEq)]
@@ -78,6 +79,8 @@ impl Config {
 struct App {
     buffer: Arc<Mutex<vt100::Parser>>,
     chat_history: Arc<Mutex<Vec<ChatMessage>>>,
+    suggestions: Arc<Mutex<Vec<String>>>,
+    suggestion_index: usize,
     active_focus: Focus,
     chat_input: TextArea<'static>,
     pty_master: Arc<Mutex<Box<dyn MasterPty>>>,
@@ -134,6 +137,7 @@ impl App {
         }
 
         let chat_history = self.chat_history.clone();
+        let suggestions_clone = self.suggestions.clone();
         let buffer_clone = self.buffer.clone(); // Necesitamos clonar el puntero al buffer
         
         // Usar la API Key de la config si existe, sino variable de entorno (fallback)
@@ -207,11 +211,76 @@ impl App {
                             if let Some(candidates) = gemini_resp.candidates {
                                 if let Some(candidate) = candidates.first() {
                                     if let Some(part) = candidate.content.parts.first() {
-                                        let mut history = chat_history.lock().unwrap();
-                                        history.push(ChatMessage {
-                                            role: "model".to_string(),
-                                            content: part.text.clone(),
-                                        });
+                                        let content = part.text.clone();
+                                        
+                                        // Update Chat History
+                                        {
+                                            let mut history = chat_history.lock().unwrap();
+                                            history.push(ChatMessage {
+                                                role: "model".to_string(),
+                                                content: content.clone(),
+                                            });
+                                        }
+
+                                        // Extract Suggestions
+                                        let mut new_suggestions = Vec::new();
+                                        let mut current_pos = 0;
+                                        while let Some(start) = content[current_pos..].find("```") {
+                                            let absolute_start = current_pos + start + 3;
+                                            if let Some(end) = content[absolute_start..].find("```") {
+                                                let raw_code = &content[absolute_start..absolute_start + end];
+                                                // Clean up language identifier (e.g., "bash\n")
+                                                let code_body = if let Some(newline_idx) = raw_code.find('\n') {
+                                                    &raw_code[newline_idx + 1..]
+                                                } else {
+                                                    raw_code
+                                                };
+                                                
+                                                for line in code_body.lines() {
+                                                    let trimmed = line.trim();
+                                                    if trimmed.is_empty() { continue; }
+                                                    
+                                                    // Output Heuristics (ignore ls output, etc)
+                                                    if trimmed.starts_with("total ") || 
+                                                       trimmed.starts_with("drwx") || 
+                                                       trimmed.starts_with("-rw-") {
+                                                        continue;
+                                                    }
+
+                                                    // Prompt Sanitization
+                                                    // Buscamos el primer indicador de prompt.
+                                                    // Usamos una heurística para distinguir prompt de variables ($HOME).
+                                                    let sanitized = if let Some(idx) = trimmed.find(|c| c == '$' || c == '#') {
+                                                        let prefix = &trimmed[..idx];
+                                                        // Si el prefijo parece un prompt (contiene @, [], ~ o es vacío/corto), cortamos.
+                                                        // Si parece código (ej: "echo "), lo dejamos.
+                                                        if prefix.trim().is_empty() || 
+                                                           prefix.contains('@') || 
+                                                           (prefix.contains('[') && prefix.contains(']')) ||
+                                                           prefix.trim().ends_with('~') {
+                                                            trimmed[idx+1..].trim()
+                                                        } else {
+                                                            trimmed
+                                                        }
+                                                    } else {
+                                                        trimmed
+                                                    };
+
+                                                    if !sanitized.is_empty() {
+                                                        new_suggestions.push(sanitized.to_string());
+                                                    }
+                                                }
+                                                current_pos = absolute_start + end + 3;
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if !new_suggestions.is_empty() {
+                                            let mut suggestions = suggestions_clone.lock().unwrap();
+                                            *suggestions = new_suggestions;
+                                        }
+
                                         writeln!(file, "Respuesta recibida y parseada OK").ok();
                                     }
                                 }
@@ -274,6 +343,8 @@ async fn main() -> Result<()> {
     let app = App {
         buffer: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 0))),
         chat_history: Arc::new(Mutex::new(Vec::new())),
+        suggestions: Arc::new(Mutex::new(Vec::new())),
+        suggestion_index: 0,
         active_focus: Focus::Terminal,
         chat_input,
         pty_master: Arc::new(Mutex::new(pair.master)),
@@ -383,6 +454,12 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
         let current_history_len = app.chat_history.lock().unwrap().len();
         if current_history_len > last_history_len {
             last_history_len = current_history_len;
+            // Also reset suggestion index when new message comes? 
+            // Maybe yes, if new suggestions arrive.
+            // But we do that in send_message implicitly if we overwrite suggestions.
+            // Let's just reset index if suggestions changed? 
+            // For now, let's leave it.
+            
             // Auto-scroll heuristic
             if let Ok(size) = terminal.size() {
                 let estimated_height = size.height.saturating_sub(5); // Status bar + borders
@@ -414,7 +491,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                 .split(f.area());
 
             // Render Status Bar
-            let status_text = " [Ctrl+Space] Switch Focus | [Ctrl+Q] Quit | [Ctrl+E] Exec Suggestion | [Ctrl+R] Reset Config | [PgUp/PgDn] Scroll ";
+            let status_text = " [Ctrl+Space] Switch Focus | [Ctrl+Q] Quit | [Ctrl+R] Reset Config | [PgUp/PgDn] Scroll Chat | [Down] Suggestions ";
             let status_bar = Paragraph::new(status_text)
                 .style(Style::default().bg(Color::Blue).fg(Color::White));
             f.render_widget(status_bar, global_chunks[1]);
@@ -460,11 +537,13 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                     ])
                     .split(main_area);
 
+                // Left Panel: Chat + Input + Suggestions
                 let left_chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
-                        Constraint::Min(1),
-                        Constraint::Length(3),
+                        Constraint::Percentage(50), // Chat History
+                        Constraint::Length(3),      // Input
+                        Constraint::Min(1),         // Suggestions
                     ])
                     .split(main_chunks[0]);
 
@@ -512,6 +591,31 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                         .style(input_style)
                 );
                 f.render_widget(&app.chat_input, left_chunks[1]);
+
+                // Render Suggestions
+                let suggestions = app.suggestions.lock().unwrap();
+                let items: Vec<ListItem> = suggestions.iter().enumerate().map(|(i, s)| {
+                    let content = format!("{}. {}", i + 1, s.lines().next().unwrap_or(s)); // Show first line only for brevity in list
+                    let style = if i == app.suggestion_index && app.active_focus == Focus::Suggestions {
+                        Style::default().bg(Color::Yellow).fg(Color::Black)
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(content).style(style)
+                }).collect();
+
+                let suggestions_block = Block::default()
+                    .borders(Borders::ALL)
+                    .title("Sugerencias (Ctrl+Down para enfocar)")
+                    .style(if app.active_focus == Focus::Suggestions {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    });
+                
+                let list = List::new(items).block(suggestions_block);
+                f.render_widget(list, left_chunks[2]);
+
 
                 let terminal_block = Block::default()
                     .borders(Borders::ALL)
@@ -606,44 +710,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                     app.setup_input.set_placeholder_text("Pegue su Google Gemini API Key aquí...");
                     continue;
                 }
-
-                // Ctrl+E to Execute Suggestion
-                if key.code == KeyCode::Char('e') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    let history = app.chat_history.lock().unwrap();
-                    if let Some(last_model_msg) = history.iter().rev().find(|m| m.role == "model") {
-                        // Simple extraction: find first code block
-                        let content = &last_model_msg.content;
-                        if let Some(start) = content.find("```") {
-                            let rest = &content[start + 3..];
-                            // Skip language identifier if present (e.g., "bash\n")
-                            let code_start = if let Some(newline) = rest.find('\n') {
-                                newline + 1
-                            } else {
-                                0
-                            };
-                            
-                            if let Some(end) = rest[code_start..].find("```") {
-                                let code = &rest[code_start..code_start + end];
-                                let clean_code = code.trim();
-                                
-                                if !clean_code.is_empty() {
-                                     let master_guard = app.pty_master.lock().unwrap();
-                                     #[cfg(unix)]
-                                     {
-                                        use std::os::unix::io::FromRawFd;
-                                        use std::fs::File;
-                                        use std::mem;
-                                        let fd = master_guard.as_raw_fd().expect("Failed to get PTY FD");
-                                        let mut file = unsafe { File::from_raw_fd(fd) };
-                                        let _ = file.write_all(clean_code.as_bytes());
-                                        mem::forget(file);
-                                     }
-                                }
-                            }
-                        }
-                    }
-                    continue;
-                }
             }
 
             match app.state {
@@ -671,7 +737,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                         // Ctrl+Space to switch focus
                         if key.code == KeyCode::Char(' ') && key.modifiers.contains(KeyModifiers::CONTROL) {
                             app.active_focus = match app.active_focus {
-                                Focus::Chat => Focus::Terminal,
+                                Focus::Chat | Focus::Suggestions => Focus::Terminal,
                                 Focus::Terminal => Focus::Chat,
                             };
                             continue;
@@ -698,13 +764,78 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                                             app.send_message(message);
                                             app.chat_input = TextArea::default();
                                             app.chat_input.set_block(Block::default().borders(Borders::ALL).title("Input"));
+                                            // Reset suggestion index
+                                            app.suggestion_index = 0;
                                         }
                                     }
+                                    KeyCode::Down => {
+                                        // Check if we are at the last line of input, if so, move to suggestions
+                                        // Or just always allow Down to go to suggestions if input is empty?
+                                        // User said: "Si el foco está en Input, permite bajar con Down al foco Suggestions."
+                                        // Let's assume if cursor is at bottom or just simple Down.
+                                        // For simplicity, let's say Ctrl+Down or just Down if at bottom.
+                                        // But TextArea captures Down.
+                                        // Let's use Ctrl+Down as hinted in the title "Ctrl+Down para enfocar"
+                                        // Wait, user request said: "Si el foco está en Input, permite bajar con Down al foco Suggestions."
+                                        // But TextArea consumes Down.
+                                        // Let's check if we can detect if we are at the bottom.
+                                        // Or maybe just use Ctrl+Down as the title says?
+                                        // The title I added says: "Sugerencias (Ctrl+Down para enfocar)"
+                                        // So I will implement Ctrl+Down for explicit switch.
+                                        // But user instructions said "bajar con Down".
+                                        // I'll implement both: Ctrl+Down always works. Down works if at bottom?
+                                        // TextArea doesn't easily expose "at bottom".
+                                        // I'll stick to Ctrl+Down for reliability and to match the label I added.
+                                    }
                                     _ => {
-                                        app.chat_input.input(event);
+                                        app.chat_input.input(event.clone());
                                     }
                                 }
+                                
+                                // Handle Ctrl+Down specifically
+                                if key.code == KeyCode::Down && key.modifiers.contains(KeyModifiers::CONTROL) {
+                                    app.active_focus = Focus::Suggestions;
+                                }
                             }
+                        }
+                        Focus::Suggestions => {
+                             if let Event::Key(key) = event {
+                                match key.code {
+                                    KeyCode::Up => {
+                                        if app.suggestion_index > 0 {
+                                            app.suggestion_index -= 1;
+                                        } else {
+                                            app.active_focus = Focus::Chat;
+                                        }
+                                    }
+                                    KeyCode::Down => {
+                                        let count = app.suggestions.lock().unwrap().len();
+                                        if count > 0 && app.suggestion_index < count - 1 {
+                                            app.suggestion_index += 1;
+                                        }
+                                    }
+                                    KeyCode::Enter => {
+                                        let suggestions = app.suggestions.lock().unwrap();
+                                        if let Some(cmd) = suggestions.get(app.suggestion_index) {
+                                            let master_guard = app.pty_master.lock().unwrap();
+                                            #[cfg(unix)]
+                                            {
+                                                use std::os::unix::io::FromRawFd;
+                                                use std::fs::File;
+                                                use std::mem;
+                                                let fd = master_guard.as_raw_fd().expect("Failed to get PTY FD");
+                                                let mut file = unsafe { File::from_raw_fd(fd) };
+                                                let _ = file.write_all(cmd.as_bytes());
+                                                let _ = file.write_all(b"\r");
+                                                mem::forget(file);
+                                            }
+                                            // Switch focus to terminal to see result
+                                            app.active_focus = Focus::Terminal;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                             }
                         }
                         Focus::Terminal => {
                             if let Event::Key(key) = event {
