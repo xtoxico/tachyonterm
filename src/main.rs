@@ -157,7 +157,7 @@ impl App {
 
             // --- FASE 2: Construir el Prompt Maestro ---
             let full_prompt = format!(
-                "CONTEXTO TERMINAL:\n{}\n\nUSUARIO DICE:\n{}", 
+                "CONTEXTO TERMINAL:\n{}\n\nINSTRUCCIONES SISTEMA:\nIMPORTANTE: Cuando sugieras comandos, pon SOLO el comando ejecutable dentro de los bloques de código. NO incluyas el prompt del sistema (user@host $) ni la salida del comando.\n\nUSUARIO DICE:\n{}", 
                 context_text, 
                 message
             );
