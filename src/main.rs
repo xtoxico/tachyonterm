@@ -500,33 +500,57 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
 
             if app.state == AppState::Setup {
                 // Render Setup UI
-                let area = centered_rect(60, 20, main_area);
-                let popup_block = Block::default()
-                    .title(" Configuración Inicial ")
-                    .borders(Borders::ALL)
-                    .style(Style::default().bg(Color::Blue).fg(Color::White));
+                let area = centered_rect(60, 40, main_area); // Increased height for better spacing
                 
                 f.render_widget(Clear, area); // Clear background
-                f.render_widget(popup_block, area);
+
+                let popup_block = Block::default()
+                    .title(" Configuración de TachyonTerm ")
+                    .borders(Borders::ALL)
+                    .style(Style::default().bg(Color::Rgb(20, 20, 20)).fg(Color::White));
+                
+                f.render_widget(popup_block.clone(), area);
 
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .margin(2)
                     .constraints([
-                        Constraint::Length(3), // Texto bienvenida
+                        Constraint::Length(6), // Instrucciones
                         Constraint::Length(3), // Input
-                        Constraint::Min(1),    // Espacio
+                        Constraint::Min(1),    // Footer/Espacio
                     ])
                     .split(area);
 
-                let text = vec![
-                    Line::from("Bienvenido a TachyonTerm."),
-                    Line::from("No se ha detectado configuración."),
-                    Line::from("Por favor, introduce tu Google Gemini API Key:"),
+                let instructions = vec![
+                    Line::from(vec![
+                        Span::raw("¡Bienvenido! Para usar la IA, necesitas una API Key gratuita de Google Gemini."),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::raw("1. Ve a: "),
+                        Span::styled("https://aistudio.google.com/app/apikey", Style::default().fg(Color::Cyan)),
+                    ]),
+                    Line::from("2. Inicia sesión y pulsa en 'Create API Key'."),
+                    Line::from("3. Copia la clave y pégala abajo (Ctrl+Shift+V)."),
                 ];
-                f.render_widget(Paragraph::new(text), chunks[0]);
                 
+                f.render_widget(Paragraph::new(instructions).style(Style::default().fg(Color::White)), chunks[0]);
+                
+                // Style Input
+                app.setup_input.set_block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" API Key ")
+                        .style(Style::default().fg(Color::Yellow))
+                );
                 f.render_widget(&app.setup_input, chunks[1]);
+
+                // Footer
+                let footer = Paragraph::new("Pulsa [Enter] para guardar y continuar")
+                    .style(Style::default().fg(Color::Gray).add_modifier(ratatui::style::Modifier::ITALIC))
+                    .alignment(ratatui::layout::Alignment::Center);
+                f.render_widget(footer, chunks[2]);
+
             } else {
                 // Render Running UI
                 let main_chunks = Layout::default()
