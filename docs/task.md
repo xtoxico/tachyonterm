@@ -1,0 +1,23 @@
+# Task List
+
+- [x] Initialize Rust project structure <!-- id: 0 -->
+- [x] Configure `Cargo.toml` with strict dependencies <!-- id: 1 -->
+- [x] Implement `src/main.rs` with TUI initialization and cleanup <!-- id: 2 -->
+- [x] Verify compilation with `cargo check` <!-- id: 3 -->
+- [x] Implement Ratatui Layout (Left/Right split) <!-- id: 4 -->
+- [x] Implement Left Panel subdivision (Assistant/Input) <!-- id: 5 -->
+- [x] Implement Main Event Loop and Quit logic <!-- id: 6 -->
+- [x] Verify UI implementation <!-- id: 7 -->
+- [x] Create `App` struct and PTY initialization <!-- id: 8 -->
+- [x] Implement background PTY reader task <!-- id: 9 -->
+- [x] Render PTY output in Right Panel <!-- id: 10 -->
+- [x] Verify PTY output visibility <!-- id: 11 -->
+- [x] Add `reqwest` and `serde` dependencies <!-- id: 12 -->
+- [x] Update `App` struct with chat history <!-- id: 13 -->
+- [x] Implement `send_message` and Gemini API integration <!-- id: 14 -->
+- [x] Verify chat logic compilation <!-- id: 15 -->
+- [x] Implement Focus management (Chat/Terminal) <!-- id: 16 -->
+- [x] Integrate `tui-textarea` for Chat Input <!-- id: 17 -->
+- [x] Implement PTY Writing logic <!-- id: 18 -->
+- [x] Update Main Event Loop for Focus and Input routing <!-- id: 19 -->
+- [x] Verify Interactivity <!-- id: 20 -->
