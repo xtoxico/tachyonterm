@@ -83,6 +83,7 @@ struct App {
     pty_master: Arc<Mutex<Box<dyn MasterPty>>>,
     state: AppState,
     config: Option<Config>,
+    chat_scroll: u16,
     setup_input: TextArea<'static>,
 }
 
@@ -279,6 +280,7 @@ async fn main() -> Result<()> {
         state,
         config,
         setup_input,
+        chat_scroll: 0,
     };
 
     // Spawn background reader task
@@ -336,8 +338,74 @@ fn map_color(c: vt100::Color) -> Color {
     }
 }
 
+fn parse_markdown_to_lines(text: &str) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let mut in_code_block = false;
+
+    for line in text.lines() {
+        if line.trim().starts_with("```") {
+            in_code_block = !in_code_block;
+            lines.push(Line::styled(
+                line.to_string(),
+                Style::default().bg(Color::Rgb(40, 40, 40)).fg(Color::Cyan),
+            ));
+            continue;
+        }
+
+        if in_code_block {
+            lines.push(Line::styled(
+                line.to_string(),
+                Style::default().bg(Color::Rgb(40, 40, 40)).fg(Color::Cyan),
+            ));
+        } else {
+            if line.starts_with('#') {
+                lines.push(Line::styled(
+                    line.to_string(),
+                    Style::default()
+                        .add_modifier(ratatui::style::Modifier::BOLD)
+                        .fg(Color::Magenta),
+                ));
+            } else if line.starts_with("You >") {
+                lines.push(Line::styled(
+                    line.to_string(),
+                    Style::default().fg(Color::Green),
+                ));
+            } else {
+                lines.push(Line::from(line.to_string()));
+            }
+        }
+    }
+    lines
+}
+
 async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
+    let mut last_history_len = 0;
+
     loop {
+        // Check for auto-scroll trigger
+        let current_history_len = app.chat_history.lock().unwrap().len();
+        if current_history_len > last_history_len {
+            last_history_len = current_history_len;
+            // Auto-scroll heuristic
+            if let Ok(size) = terminal.size() {
+                let estimated_height = size.height.saturating_sub(5); // Status bar + borders
+                // Calculate lines count
+                let history = app.chat_history.lock().unwrap();
+                let chat_text: String = history.iter()
+                    .map(|msg| {
+                        if msg.role == "user" {
+                            format!("You > {}", msg.content)
+                        } else {
+                            format!("{}", msg.content)
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n\n");
+                let lines_count = parse_markdown_to_lines(&chat_text).len() as u16;
+                app.chat_scroll = lines_count.saturating_sub(estimated_height);
+            }
+        }
+
         terminal.draw(|f| {
             // Global Layout: Main Content + Status Bar
             let global_chunks = Layout::default()
@@ -349,7 +417,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                 .split(f.area());
 
             // Render Status Bar
-            let status_text = " [Ctrl+Space] Switch Focus | [Ctrl+Q] Quit | [Ctrl+E] Exec Suggestion | [Ctrl+R] Reset Config ";
+            let status_text = " [Ctrl+Space] Switch Focus | [Ctrl+Q] Quit | [Ctrl+E] Exec Suggestion | [Ctrl+R] Reset Config | [PgUp/PgDn] Scroll ";
             let status_bar = Paragraph::new(status_text)
                 .style(Style::default().bg(Color::Blue).fg(Color::White));
             f.render_widget(status_bar, global_chunks[1]);
@@ -415,11 +483,24 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                 // Render Chat History
                 let history = app.chat_history.lock().unwrap();
                 let chat_text: String = history.iter()
-                    .map(|msg| format!("{}: {}", msg.role, msg.content))
+                    .map(|msg| {
+                        if msg.role == "user" {
+                            format!("You > {}", msg.content)
+                        } else {
+                            format!("{}", msg.content)
+                        }
+                    })
                     .collect::<Vec<String>>()
                     .join("\n\n");
                 
-                f.render_widget(Paragraph::new(chat_text).block(assistant_block), left_chunks[0]);
+                let lines = parse_markdown_to_lines(&chat_text);
+                f.render_widget(
+                    Paragraph::new(lines)
+                        .block(assistant_block)
+                        .scroll((app.chat_scroll, 0))
+                        .wrap(ratatui::widgets::Wrap { trim: false }), 
+                    left_chunks[0]
+                );
 
                 // Render Chat Input
                 let input_style = if app.active_focus == Focus::Chat {
@@ -469,7 +550,7 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                     lines.push(Line::from(spans));
                 }
 
-                // Auto-scroll logic
+                // Auto-scroll logic for terminal
                 let widget_height = main_chunks[1].height.saturating_sub(2); // borders
                 let scroll_offset = if cursor_row >= widget_height {
                     cursor_row.saturating_sub(widget_height).saturating_add(1)
@@ -558,12 +639,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                                         let fd = master_guard.as_raw_fd().expect("Failed to get PTY FD");
                                         let mut file = unsafe { File::from_raw_fd(fd) };
                                         let _ = file.write_all(clean_code.as_bytes());
-                                        // Optional: press enter automatically? Usually safer to let user press enter, 
-                                        // but "Execute Suggestion" implies execution. Let's add a newline.
-                                        // let _ = file.write_all(b"\n"); 
-                                        // User might want to edit, so maybe NO newline is safer. 
-                                        // But standard "execute" usually runs it. 
-                                        // Let's stick to pasting it so user can review.
                                         mem::forget(file);
                                      }
                                 }
@@ -609,18 +684,30 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                     match app.active_focus {
                         Focus::Chat => {
                             if let Event::Key(key) = event {
-                                if key.code == KeyCode::Enter {
-                                    let lines = app.chat_input.lines();
-                                    let message = lines.join("\n");
-                                    if !message.trim().is_empty() {
-                                        app.send_message(message);
-                                        app.chat_input = TextArea::default();
-                                        app.chat_input.set_block(Block::default().borders(Borders::ALL).title("Input"));
+                                match key.code {
+                                    KeyCode::PageUp => {
+                                        app.chat_scroll = app.chat_scroll.saturating_sub(5);
                                     }
-                                    continue;
+                                    KeyCode::PageDown => {
+                                        app.chat_scroll = app.chat_scroll.saturating_add(5);
+                                    }
+                                    KeyCode::Home => {
+                                        app.chat_scroll = 0;
+                                    }
+                                    KeyCode::Enter => {
+                                        let lines = app.chat_input.lines();
+                                        let message = lines.join("\n");
+                                        if !message.trim().is_empty() {
+                                            app.send_message(message);
+                                            app.chat_input = TextArea::default();
+                                            app.chat_input.set_block(Block::default().borders(Borders::ALL).title("Input"));
+                                        }
+                                    }
+                                    _ => {
+                                        app.chat_input.input(event);
+                                    }
                                 }
                             }
-                            app.chat_input.input(event);
                         }
                         Focus::Terminal => {
                             if let Event::Key(key) = event {
