@@ -21,3 +21,6 @@
 - [x] Implement PTY Writing logic <!-- id: 18 -->
 - [x] Update Main Event Loop for Focus and Input routing <!-- id: 19 -->
 - [x] Verify Interactivity <!-- id: 20 -->
+- [x] Implement Context Injection (Warp feature) <!-- id: 21 -->
+- [x] Implement File Logging for Debugging <!-- id: 22 -->
+- [x] Implement Configuration Management (XDG, Setup UI) <!-- id: 23 -->

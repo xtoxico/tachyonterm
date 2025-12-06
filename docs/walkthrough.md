@@ -66,3 +66,61 @@ We have implemented full interactivity for the application:
     *   Press `Tab` to switch focus.
     *   Type in Chat Input and press `Enter` to talk to Gemini.
     *   Switch to Terminal and type commands (e.g., `ls`, `pwd`) to interact with the shell.
+
+## Context Injection (Warp Feature)
+We have implemented the "Warp" feature, which injects the terminal context into the AI's prompt:
+1.  **Context Capture**:
+    *   Before sending a message, the application captures the last 60 lines of the terminal buffer.
+2.  **Prompt Engineering**:
+    *   Constructs a `full_prompt` that includes the terminal context, the user's question, and system instructions.
+    *   Format:
+        ```text
+        CONTEXTO DE TERMINAL (Últimas líneas):
+        ---
+        [Buffer Content]
+        ---
+
+        PREGUNTA DEL USUARIO:
+        [User Message]
+
+        INSTRUCCIONES DEL SISTEMA:
+        ...
+        ```
+3.  **Invisible Context**:
+    *   The `full_prompt` is sent to the Gemini API.
+    *   Crucially, the Chat UI **only displays the user's original message**, keeping the interface clean while providing the AI with full context.
+
+
+## Configuration Management
+We have implemented a robust configuration system:
+1.  **XDG Standard**:
+    *   Uses `directories` crate to locate standard config paths (e.g., `~/.config/tachyonterm/config.toml` on Linux).
+    *   Uses `toml` crate for serialization/deserialization.
+2.  **Setup UI**:
+    *   Introduced `AppState` (`Setup`, `Running`).
+    *   On first run (if config is missing), the app shows a "Setup" popup asking for the Google Gemini API Key.
+    *   The key is saved to `config.toml`, and the app transitions to the main UI.
+3.  **Fallback**:
+    *   If `config.toml` exists, it loads the key.
+    *   If not found (and during development), it falls back to the `GEMINI_API_KEY` environment variable if available.
+
+## Bug Fixes
+*   **Gemini API Model**: Updated the model name to `gemini-2.5-flash` to ensure compatibility with the latest API version and avoid 404 errors.
+
+### Verification
+*   **Compilation**: Validated with `cargo check`.
+*   **Manual Testing**:
+    *   Run without config -> Setup UI appears.
+    *   Enter key -> Config saved, transitions to App.
+    *   Restart -> App starts immediately.
+    *   Chat -> Messages are sent to `gemini-2.5-flash` and responses are received.
+
+## Conclusion
+We have successfully built a feature-rich Rust TUI application with:
+*   **Robust Architecture**: `ratatui` + `tokio` + `portable-pty`.
+*   **Full Interactivity**: Focus management, chat input, and terminal control.
+*   **AI Integration**: Context-aware chat using Google Gemini 2.5 Flash (Warp feature).
+*   **Professional Features**: Configuration management (XDG), Setup UI, and file-based logging.
+
+The application is stable and ready for use.
+

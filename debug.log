@@ -1,0 +1,90 @@
+--- ENVIANDO REQUEST ---
+Key: AIzaSyDqnAyheJsgKrWDFRg7lbUdvbWnqMoIhrk
+Prompt Length: 200
+Status Code: 404 Not Found
+API ERROR BODY: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+--- ENVIANDO REQUEST ---
+Key: AIzaSyDqnAyheJsgKrWDFRg7lbUdvbWnqMoIhrk
+Prompt Length: 199
+Status Code: 404 Not Found
+API ERROR BODY: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+--- ENVIANDO REQUEST ---
+Key: AIzaSyDqnAyheJsgKrWDFRg7lbUdvbWnqMoIhrk
+Prompt Length: 193
+Status Code: 400 Bad Request
+API ERROR BODY: {
+  "error": {
+    "code": 400,
+    "message": "API key expired. Please renew the API key.",
+    "status": "INVALID_ARGUMENT",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "API_KEY_INVALID",
+        "domain": "googleapis.com",
+        "metadata": {
+          "service": "generativelanguage.googleapis.com"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "API key expired. Please renew the API key."
+      }
+    ]
+  }
+}
+
+--- ENVIANDO REQUEST ---
+Key: AIzaSyDqnAyheJsgKrWDFRg7lbUdvbWnqMoIhrk
+Prompt Length: 95
+Status Code: 400 Bad Request
+API ERROR BODY: {
+  "error": {
+    "code": 400,
+    "message": "API key expired. Please renew the API key.",
+    "status": "INVALID_ARGUMENT",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "API_KEY_INVALID",
+        "domain": "googleapis.com",
+        "metadata": {
+          "service": "generativelanguage.googleapis.com"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "API key expired. Please renew the API key."
+      }
+    ]
+  }
+}
+
+--- ENVIANDO REQUEST ---
+Key: AIzaSyBN1u4-cIVfUIPYbCF34VhDzJn88FNRepw
+Prompt Length: 96
+Status Code: 404 Not Found
+API ERROR BODY: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+

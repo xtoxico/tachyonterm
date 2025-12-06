@@ -51,3 +51,25 @@ Create a Rust project for a TUI application with specific dependencies (`ratatui
     - Sending message works.
     - Typing in Terminal sends characters to PTY (e.g. `ls`, `pwd`).
 
+
+## Context Injection (Warp Feature)
+### Goal
+Enhance AI responses by injecting the last 60 lines of terminal output into the prompt, allowing the AI to "see" what's happening in the terminal.
+
+### Proposed Changes
+#### [MODIFY] [src/main.rs](file:///home/xtoxico/workspace/tachyonterm/src/main.rs)
+- Update `send_message` function:
+    - Lock `self.buffer` and retrieve the last 60 lines.
+    - Construct `full_prompt` combining:
+        - Terminal Context
+        - User Question
+        - System Instructions
+    - Send `full_prompt` to Gemini API.
+    - **Crucial**: Ensure `chat_history` only displays the original user message, keeping the context injection invisible to the user.
+
+### Verification
+- **Manual Testing**:
+    - Run a command that produces output (e.g., `ls -la`, or a command that fails).
+    - Ask the AI "What does the last command show?" or "Fix the error".
+    - Verify the AI response references the terminal output.
+    - Verify the Chat UI only shows the short question.

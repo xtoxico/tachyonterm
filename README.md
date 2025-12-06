@@ -38,6 +38,18 @@ TachyonTerm is a Rust-based Terminal User Interface (TUI) application that combi
     cargo run
     ```
 
+## Configuration
+
+TachyonTerm supports persistent configuration via `config.toml`.
+
+*   **First Run**: The application will prompt you to enter your Gemini API Key if no configuration is found.
+*   **Location**: The config file is stored in your system's standard configuration directory (e.g., `~/.config/tachyonterm/config.toml` on Linux).
+*   **Fallback**: If no config file exists, it falls back to the `GEMINI_API_KEY` environment variable.
+
+## Troubleshooting
+
+*   **Logs**: The application writes debug logs to `debug.log` in the current directory. Check this file if you encounter issues with the AI integration.
+
 ## Controls
 
 *   **Tab**: Switch focus between Chat Input and Local Terminal.
